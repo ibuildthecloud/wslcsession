@@ -1,0 +1,7 @@
+# bridgesrc/entrypoint.sh gets embedded and executed inside the Linux guest -
+# a CRLF checkout (e.g. Windows with core.autocrlf=true, the common default)
+# would break its shebang line and command parsing. Force LF for everything
+# under bridgesrc/ specifically, and default text files to LF generally so
+# this doesn't need to be revisited if more guest-executed files show up.
+* text=auto eol=lf
+bridgesrc/* text eol=lf

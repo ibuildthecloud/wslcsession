@@ -1,0 +1,7 @@
+/wslcdemo
+/wslcdemo.exe
+*.exe
+*.test
+*.out
+.vscode/
+.idea/
