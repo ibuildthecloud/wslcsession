@@ -234,6 +234,45 @@ $GOOS" error - so a cross-platform CI matrix, or a larger project that
 imports this package behind a runtime check rather than a build tag, won't
 hit a compile failure just from depending on it.
 
+## Code layout
+
+- `com.go` / `types.go` - the raw ABI layer: vtable slots, C struct layouts,
+  `unsafe.Pointer`, manual `runtime.KeepAlive`. Nothing outside this pair of
+  files touches a raw COM pointer.
+- `comapi.go` - wraps that ABI in three Go interfaces mirroring the real COM
+  interfaces one-for-one (`sessionManager`/`IWSLCSessionManager`,
+  `wslcSession`/`IWSLCSession`, `wslcProcess`/`IWSLCProcess`), but with
+  Go-native parameter and return types (`string`, `[]string`, `bool`)
+  instead of `*uint16`/`*byte`/`uintptr`. All the marshaling lives in the
+  concrete `comSessionManager`/`comSession`/`comProcess` implementations.
+- `session.go` / `conn.go` - the public API (`Session`, `net.Conn`). These
+  only ever call the interfaces from `comapi.go` - no `unsafe`, no vtable
+  slots, no raw pointers.
+- `options.go` - `Options`/`VolumeOptions`, shared as-is between the real
+  implementation and the non-Windows stub.
+- `unsupported.go` - the non-Windows stub (see "Other platforms" below).
+
+## Testing
+
+- **Unit tests** (`*_test.go`, run by a plain `go test ./...`) cover GUID
+  parsing, HRESULT handling, struct marshaling (`makeStringArray`),
+  `Options` validation, and `Session`/`guestConn` lifecycle logic
+  (`do`/`Close`/`CloseWrite` idempotency, process-release-on-close) - all
+  without booting a real VM, either by testing pure logic directly or, for
+  `Session`, by swapping in a fake COM-thread loop that just drains `reqCh`
+  (see `newTestSession` in `session_test.go`) since `do`/`Close` never touch
+  the real COM handles directly.
+- **E2E tests** (`e2e_test.go`) boot a real wslc VM and exercise the full
+  stack against a real dockerd: session lifecycle, `DockerConn` + `/version`,
+  `DialGuestTCP` against both a refused port and (via `TestE2EPersistentVolume`)
+  a real VHD-backed volume. These are skipped by default - they need an
+  actual wslc-capable Windows machine - and only run with:
+  ```
+  $env:WSLCGO_E2E="1"; go test -run E2E ./...
+  ```
+- `cmd/wslcdemo` remains the interactive, narrated version of the same
+  checks - useful for watching what's actually happening, not just pass/fail.
+
 ## Two gotchas that cost real debugging time - documented so you don't repeat them
 
 1. **`CO_E_NOTINITIALIZED` on the second COM call.** COM apartment state is

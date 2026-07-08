@@ -22,15 +22,15 @@ const sdSend = 1
 // that entirely.
 type guestConn struct {
 	session        *Session
-	processPtr     uintptr
-	stdin          uintptr // write here -> guest process's stdin
-	stdout         uintptr // read here <- guest process's stdout
+	process        wslcProcess
+	stdin          socketHandle // write here -> guest process's stdin
+	stdout         socketHandle // read here <- guest process's stdout
 	closeOnce      sync.Once
 	writeCloseOnce sync.Once
 }
 
-func newGuestConn(session *Session, processPtr, stdin, stdout uintptr) *guestConn {
-	return &guestConn{session: session, processPtr: processPtr, stdin: stdin, stdout: stdout}
+func newGuestConn(session *Session, process wslcProcess, stdin, stdout socketHandle) *guestConn {
+	return &guestConn{session: session, process: process, stdin: stdin, stdout: stdout}
 }
 
 func (c *guestConn) Read(b []byte) (int, error) {
@@ -81,7 +81,7 @@ func (c *guestConn) Close() error {
 		_ = c.CloseWrite()
 		closesocket(c.stdin)
 		closesocket(c.stdout)
-		c.session.releaseProcess(c.processPtr)
+		c.session.releaseProcess(c.process)
 	})
 	return nil
 }

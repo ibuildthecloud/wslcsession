@@ -5,12 +5,8 @@ package wslcgo
 import (
 	"fmt"
 	"net"
-	"os"
 	"runtime"
-	"strconv"
 	"sync"
-	"syscall"
-	"unsafe"
 )
 
 // Session owns a dedicated wslc VM. It is NOT persistent: the underlying VM
@@ -27,6 +23,11 @@ import (
 // the one that initialized COM, and fail with CO_E_NOTINITIALIZED
 // (0x800401F0) - which is exactly what happened during development here
 // before this was added.
+//
+// Session itself never touches raw COM pointers or vtable slots - all of
+// that lives behind the sessionManager/wslcSession/wslcProcess interfaces in
+// comapi.go. This type is just the public API and lifecycle/threading glue
+// on top of them.
 type Session struct {
 	reqCh  chan func()
 	closed chan struct{}
@@ -45,8 +46,8 @@ type Session struct {
 	stopped   bool
 	closeOnce sync.Once
 
-	ptr uintptr
-	mgr uintptr
+	mgr  sessionManager
+	sess wslcSession
 
 	bridgeDir  string
 	bridgeDone bool
@@ -94,44 +95,42 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 		return
 	}
 
-	mgrPtr, err := coCreateInstance(&clsidWSLCSessionManager, &iidIWSLCSessionManager, clsctxLocalServer)
+	mgr, err := activateSessionManager()
 	if err != nil {
-		fail(fmt.Errorf("wslcgo: activate WSLCSessionManager: %w", err))
+		fail(err)
 		return
 	}
 
-	sessionPtr, err := createSession(mgrPtr, opts)
+	sess, err := mgr.CreateSession(opts)
 	if err != nil {
-		comRelease(mgrPtr)
+		mgr.Release()
 		fail(err)
 		return
 	}
 
 	for _, v := range opts.Volumes {
-		if err := createVolume(sessionPtr, v); err != nil {
+		if err := sess.CreateVolume(v); err != nil {
 			// All-or-nothing: don't hand back a session with only some of
 			// the requested volumes created.
-			vtblCall(sessionPtr, slotSessionTerminate)
-			comRelease(sessionPtr)
-			comRelease(mgrPtr)
+			_ = sess.Terminate()
+			sess.Release()
+			mgr.Release()
 			fail(fmt.Errorf("wslcgo: create volume %q: %w", v.Name, err))
 			return
 		}
 	}
 
-	s.ptr = sessionPtr
-	s.mgr = mgrPtr
+	s.mgr = mgr
+	s.sess = sess
 	initErr <- nil
 
 	for req := range s.reqCh {
 		req()
 	}
 
-	if s.ptr != 0 {
-		vtblCall(s.ptr, slotSessionTerminate) // best-effort
-		comRelease(s.ptr)
-	}
-	comRelease(s.mgr)
+	_ = s.sess.Terminate() // best-effort
+	s.sess.Release()
+	s.mgr.Release()
 	close(s.closed)
 }
 
@@ -146,117 +145,6 @@ func (s *Session) do(f func()) {
 	done := make(chan struct{})
 	s.reqCh <- func() { defer close(done); f() }
 	<-done
-}
-
-func createSession(mgrPtr uintptr, opts Options) (uintptr, error) {
-	displayName := opts.DisplayName
-	if displayName == "" {
-		displayName = fmt.Sprintf("wslcgo-%d", os.Getpid())
-	}
-
-	dnPtr, err := syscall.UTF16PtrFromString(displayName)
-	if err != nil {
-		return 0, err
-	}
-
-	var spPtr *uint16
-	if opts.StoragePath != "" {
-		spPtr, err = syscall.UTF16PtrFromString(opts.StoragePath)
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	cpuCount := opts.CPUCount
-	if cpuCount == 0 {
-		cpuCount = 2
-	}
-	memoryMB := opts.MemoryMB
-	if memoryMB == 0 {
-		memoryMB = 2048
-	}
-	bootTimeoutMs := uint32(60000)
-	if opts.BootTimeout > 0 {
-		bootTimeoutMs = uint32(opts.BootTimeout.Milliseconds())
-	}
-
-	settings := wslcSessionSettings{
-		DisplayName:          dnPtr,
-		StoragePath:          spPtr,
-		MaximumStorageSizeMb: opts.MaxStorageSizeMB,
-		CpuCount:             cpuCount,
-		MemoryMb:             memoryMB,
-		BootTimeoutMs:        bootTimeoutMs,
-		NetworkingMode:       networkingModeNAT,
-	}
-
-	var sessionPtr uintptr
-	hr := vtblCall(mgrPtr, slotSessionManagerCreateSession,
-		uintptr(unsafe.Pointer(&settings)),
-		uintptr(sessionFlagNone), // no Persistent: see Session doc comment.
-		0,                        // warning callback
-		uintptr(unsafe.Pointer(&sessionPtr)))
-	runtime.KeepAlive(dnPtr)
-	runtime.KeepAlive(spPtr)
-	runtime.KeepAlive(settings)
-	if err := hrErr(hr); err != nil {
-		return 0, fmt.Errorf("wslcgo: CreateSession: %w", err)
-	}
-	return sessionPtr, nil
-}
-
-// createVolume calls IWSLCSession::CreateVolume with the "vhd" driver (see
-// WSLCVhdVolume.cpp / WSLCVolumeMetadata.h) to create a named docker volume
-// backed by its own .vhdx, independent of the session's main storage.
-// Called from comThread during session creation itself (see NewSession's
-// Options.Volumes handling), so - like createSession - it runs on the COM
-// thread by construction and doesn't need to go through Session.do.
-func createVolume(sessionPtr uintptr, v VolumeOptions) error {
-	if v.Name == "" {
-		return fmt.Errorf("wslcgo: volume name is required")
-	}
-	if v.SizeMB == 0 {
-		return fmt.Errorf("wslcgo: volume %q: SizeMB must be > 0", v.Name)
-	}
-
-	namePtr, err := syscall.BytePtrFromString(v.Name)
-	if err != nil {
-		return err
-	}
-	driverPtr, err := syscall.BytePtrFromString(volumeDriverVhd)
-	if err != nil {
-		return err
-	}
-
-	sizeBytesKeyPtr, _ := syscall.BytePtrFromString(driverOptSizeBytes)
-	sizeBytesValPtr, _ := syscall.BytePtrFromString(strconv.FormatUint(v.SizeMB*1024*1024, 10))
-	fixedKeyPtr, _ := syscall.BytePtrFromString(driverOptFixed)
-	fixedValPtr, _ := syscall.BytePtrFromString(strconv.FormatBool(v.Fixed))
-
-	driverOpts := []wslcKeyValuePair{
-		{Key: sizeBytesKeyPtr, Value: sizeBytesValPtr},
-		{Key: fixedKeyPtr, Value: fixedValPtr},
-	}
-
-	options := wslcVolumeOptions{
-		Name:            namePtr,
-		Driver:          driverPtr,
-		DriverOpts:      &driverOpts[0],
-		DriverOptsCount: uint32(len(driverOpts)),
-	}
-
-	var info wslcVolumeInformation
-	hr := vtblCall(sessionPtr, slotSessionCreateVolume,
-		uintptr(unsafe.Pointer(&options)),
-		uintptr(unsafe.Pointer(&info)))
-	runtime.KeepAlive(namePtr)
-	runtime.KeepAlive(driverPtr)
-	runtime.KeepAlive(driverOpts)
-	runtime.KeepAlive(sizeBytesKeyPtr)
-	runtime.KeepAlive(sizeBytesValPtr)
-	runtime.KeepAlive(fixedKeyPtr)
-	runtime.KeepAlive(fixedValPtr)
-	return hrErr(hr)
 }
 
 // Close terminates the VM and releases COM references. Safe to call
@@ -279,13 +167,7 @@ func (s *Session) DisplayName() (string, error) {
 	var name string
 	var callErr error
 	s.do(func() {
-		var p *uint16
-		hr := vtblCall(s.ptr, slotSessionGetDisplayName, uintptr(unsafe.Pointer(&p)))
-		if err := hrErr(hr); err != nil {
-			callErr = err
-			return
-		}
-		name = syscall.UTF16ToString(unsafe.Slice(p, 256))
+		name, callErr = s.sess.GetDisplayName()
 	})
 	return name, callErr
 }
@@ -323,123 +205,41 @@ func (s *Session) dial(target string) (net.Conn, error) {
 	// preserve in the first place - not worth depending on whatever
 	// permission bits the 9p layer happens to expose.
 	script := bridgeDir + "/entrypoint.sh"
-	processPtr, errno, err := s.execRootNamespace("/bin/sh", []string{"/bin/sh", script, target})
-	if err != nil {
-		return nil, fmt.Errorf("wslcgo: spawn bridge for %q (guest errno=%d): %w", target, errno, err)
+
+	var process wslcProcess
+	var callErr error
+	s.do(func() {
+		// wslcsession.exe backs this with the exact same
+		// Fork(WSLC_FORK::Process) primitive its own DockerHTTPClient uses
+		// for its private docker.sock relay (WSLCVirtualMachine.cpp) - this
+		// is the supported front door onto that same fork machinery.
+		process, callErr = s.sess.CreateRootNamespaceProcess("/bin/sh", []string{"/bin/sh", script, target}, true)
+	})
+	if callErr != nil {
+		return nil, fmt.Errorf("wslcgo: spawn bridge for %q: %w", target, callErr)
 	}
 
-	var stdin, stdout wslcHandle
+	var stdin, stdout socketHandle
 	var hErr error
 	s.do(func() {
-		stdin, hErr = getStdHandle(processPtr, fdStdin)
+		stdin, hErr = process.GetStdHandle(fdStdin)
 		if hErr != nil {
 			return
 		}
-		stdout, hErr = getStdHandle(processPtr, fdStdout)
+		stdout, hErr = process.GetStdHandle(fdStdout)
 	})
 	if hErr != nil {
-		s.do(func() { comRelease(processPtr) })
+		s.releaseProcess(process)
 		return nil, hErr
 	}
 
-	return newGuestConn(s, processPtr, stdin.Handle, stdout.Handle), nil
+	return newGuestConn(s, process, stdin, stdout), nil
 }
 
 // releaseProcess is used by guestConn.Close to release the IWSLCProcess
 // reference on the session's COM thread.
-func (s *Session) releaseProcess(processPtr uintptr) {
-	s.do(func() { comRelease(processPtr) })
-}
-
-// execRootNamespace runs argv[0] inside the guest's root namespace (i.e. not
-// inside any container) with a writable stdin pipe, via
-// IWSLCSession::CreateRootNamespaceProcess. Internally, wslcsession.exe
-// backs this with the exact same Fork(WSLC_FORK::Process) primitive its own
-// DockerHTTPClient uses for its private docker.sock relay
-// (WSLCVirtualMachine.cpp) - this is the supported front door onto that
-// same fork machinery.
-func (s *Session) execRootNamespace(executable string, argv []string) (uintptr, int32, error) {
-	exePtr, err := syscall.BytePtrFromString(executable)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	cmdLine, keepAlive, err := makeStringArray(argv)
-	if err != nil {
-		return 0, 0, err
-	}
-	env, envKeepAlive, err := makeStringArray(nil)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	options := wslcProcessOptions{
-		CommandLine: cmdLine,
-		Environment: env,
-		Flags:       processFlagStdin,
-	}
-
-	var processPtr uintptr
-	var errNo int32
-	var callErr error
-	s.do(func() {
-		hr := vtblCall(s.ptr, slotSessionCreateRootNamespaceProcess,
-			uintptr(unsafe.Pointer(exePtr)),
-			uintptr(unsafe.Pointer(&options)),
-			0, 0, // ttyRows, ttyColumns - unused, no Tty flag set
-			uintptr(unsafe.Pointer(&processPtr)),
-			uintptr(unsafe.Pointer(&errNo)))
-		callErr = hrErr(hr)
-	})
-	runtime.KeepAlive(exePtr)
-	runtime.KeepAlive(keepAlive)
-	runtime.KeepAlive(envKeepAlive)
-	runtime.KeepAlive(options)
-	if callErr != nil {
-		return 0, errNo, callErr
-	}
-	return processPtr, errNo, nil
-}
-
-func getStdHandle(processPtr uintptr, fd int32) (wslcHandle, error) {
-	var h wslcHandle
-	hr := vtblCall(processPtr, slotProcessGetStdHandle, uintptr(fd), uintptr(unsafe.Pointer(&h)))
-	if err := hrErr(hr); err != nil {
-		return h, err
-	}
-	// Observed to always be Socket in practice, but WSLCHandle is a genuine
-	// discriminated union - fail clearly here rather than silently handing
-	// a File or Pipe handle to raw Winsock recv()/send() later, which would
-	// misbehave instead of erroring.
-	if h.Type != handleTypeSocket {
-		return h, fmt.Errorf("wslcgo: expected a Socket handle, got %s", h.Type)
-	}
-	return h, nil
-}
-
-// makeStringArray builds a wslcStringArray (an array of char*) from a Go
-// string slice. The returned keepAlive value must stay reachable for as
-// long as the resulting wslcStringArray is passed to a syscall - it holds
-// the actual *byte pointers (and the slice backing them) so Go's GC doesn't
-// collect them out from under the in-flight call.
-func makeStringArray(items []string) (wslcStringArray, any, error) {
-	if len(items) == 0 {
-		return wslcStringArray{}, nil, nil
-	}
-
-	ptrs := make([]*byte, len(items))
-	for i, s := range items {
-		p, err := syscall.BytePtrFromString(s)
-		if err != nil {
-			return wslcStringArray{}, nil, err
-		}
-		ptrs[i] = p
-	}
-
-	return wslcStringArray{
-		Values: (*uintptr)(unsafe.Pointer(&ptrs[0])),
-		Count:  uint32(len(ptrs)),
-	}, ptrs, nil
+func (s *Session) releaseProcess(process wslcProcess) {
+	s.do(process.Release)
 }
 
 func (s *Session) ensureBridgeMounted() (string, error) {
@@ -457,22 +257,8 @@ func (s *Session) ensureBridgeMounted() (string, error) {
 			return
 		}
 
-		wPtr, err := syscall.UTF16PtrFromString(extractedDir)
-		if err != nil {
-			callErr = err
-			return
-		}
-		lPtr, err := syscall.BytePtrFromString(guestBridgeMountPath)
-		if err != nil {
-			callErr = err
-			return
-		}
-
-		hr := vtblCall(s.ptr, slotSessionMountWindowsFolder,
-			uintptr(unsafe.Pointer(wPtr)), uintptr(unsafe.Pointer(lPtr)), 1 /* read-only */)
-		runtime.KeepAlive(wPtr)
-		runtime.KeepAlive(lPtr)
-		if err := hrErr(hr); err != nil && !isHRESULT(err, hrErrorAlreadyExists) {
+		err = s.sess.MountWindowsFolder(extractedDir, guestBridgeMountPath, true)
+		if err != nil && !isHRESULT(err, hrErrorAlreadyExists) {
 			callErr = fmt.Errorf("wslcgo: MountWindowsFolder: %w", err)
 			return
 		}

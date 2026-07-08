@@ -198,11 +198,11 @@ func comRelease(obj uintptr) {
 	}
 }
 
-func recv(handle uintptr, buf []byte) (int, error) {
+func recv(handle socketHandle, buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
-	r, _, err := procRecv.Call(handle, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
+	r, _, err := procRecv.Call(uintptr(handle), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
 	n := int(int32(r))
 	if n < 0 {
 		return 0, fmt.Errorf("wslcgo: recv failed: %w", err)
@@ -210,11 +210,11 @@ func recv(handle uintptr, buf []byte) (int, error) {
 	return n, nil
 }
 
-func send(handle uintptr, buf []byte) (int, error) {
+func send(handle socketHandle, buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
-	r, _, err := procSend.Call(handle, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
+	r, _, err := procSend.Call(uintptr(handle), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
 	n := int(int32(r))
 	if n < 0 {
 		return 0, fmt.Errorf("wslcgo: send failed: %w", err)
@@ -225,10 +225,10 @@ func send(handle uintptr, buf []byte) (int, error) {
 // shutdownSocket and closesocket are best-effort: called from Close()/
 // CloseWrite() paths where the socket may already be half-torn-down, and
 // there's nothing meaningful to do with a failure at that point.
-func shutdownSocket(handle uintptr, how int) {
-	_, _, _ = procShutdown.Call(handle, uintptr(how))
+func shutdownSocket(handle socketHandle, how int) {
+	_, _, _ = procShutdown.Call(uintptr(handle), uintptr(how))
 }
 
-func closesocket(handle uintptr) {
-	_, _, _ = procClosesocket.Call(handle)
+func closesocket(handle socketHandle) {
+	_, _, _ = procClosesocket.Call(uintptr(handle))
 }
