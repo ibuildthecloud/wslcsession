@@ -1,6 +1,6 @@
 //go:build windows
 
-package wslcgo
+package wslcsession
 
 import (
 	"fmt"
@@ -77,7 +77,7 @@ func (e *GuestExecError) Unwrap() error { return e.Err }
 func activateSessionManager() (sessionManager, error) {
 	ptr, err := coCreateInstance(&clsidWSLCSessionManager, &iidIWSLCSessionManager, clsctxLocalServer)
 	if err != nil {
-		return nil, fmt.Errorf("wslcgo: activate WSLCSessionManager: %w", err)
+		return nil, fmt.Errorf("wslcsession: activate WSLCSessionManager: %w", err)
 	}
 	return &comSessionManager{ptr: ptr}, nil
 }
@@ -91,7 +91,7 @@ func (m *comSessionManager) Release() { comRelease(m.ptr) }
 func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 	displayName := opts.DisplayName
 	if displayName == "" {
-		displayName = fmt.Sprintf("wslcgo-%d", os.Getpid())
+		displayName = fmt.Sprintf("wslcsession-%d", os.Getpid())
 	}
 
 	dnPtr, err := syscall.UTF16PtrFromString(displayName)
@@ -140,7 +140,7 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 	runtime.KeepAlive(spPtr)
 	runtime.KeepAlive(settings)
 	if err := hrErr(hr); err != nil {
-		return nil, fmt.Errorf("wslcgo: CreateSession: %w", err)
+		return nil, fmt.Errorf("wslcsession: CreateSession: %w", err)
 	}
 	return &comSession{ptr: sessionPtr}, nil
 }
@@ -235,10 +235,10 @@ func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string
 // backed by its own .vhdx, independent of the session's main storage.
 func (s *comSession) CreateVolume(v VolumeOptions) error {
 	if v.Name == "" {
-		return fmt.Errorf("wslcgo: volume name is required")
+		return fmt.Errorf("wslcsession: volume name is required")
 	}
 	if v.SizeMB == 0 {
-		return fmt.Errorf("wslcgo: volume %q: SizeMB must be > 0", v.Name)
+		return fmt.Errorf("wslcsession: volume %q: SizeMB must be > 0", v.Name)
 	}
 
 	namePtr, err := syscall.BytePtrFromString(v.Name)
@@ -298,7 +298,7 @@ func (p *comProcess) GetStdHandle(fd int32) (socketHandle, error) {
 	// a File or Pipe handle to raw Winsock recv()/send() later, which would
 	// misbehave instead of erroring.
 	if h.Type != handleTypeSocket {
-		return 0, fmt.Errorf("wslcgo: expected a Socket handle, got %s", h.Type)
+		return 0, fmt.Errorf("wslcsession: expected a Socket handle, got %s", h.Type)
 	}
 	return socketHandle(h.Handle), nil
 }

@@ -1,9 +1,9 @@
 // wslcdemo has two modes:
 //
-//	wslcdemo            exercises the wslcgo library end to end (session,
+//	wslcdemo            exercises the wslcsession library end to end (session,
 //	                     docker.sock check, DialGuestTCP check)
 //	wslcdemo proxy       runs a local TCP -> dockerd proxy backed by a
-//	                     wslcgo session, so a real `docker` CLI can point
+//	                     wslcsession session, so a real `docker` CLI can point
 //	                     at it (docker -H tcp://127.0.0.1:2375)
 //
 // See demo.go and proxy.go respectively. Session configuration (storage
@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ibuildthecloud/wslcgo"
+	"github.com/ibuildthecloud/wslcsession"
 )
 
 func main() {
@@ -45,11 +45,11 @@ func truncate(s string, n int) string {
 
 // volumeFlag implements flag.Value for a repeatable -volume flag, each
 // instance describing one additional VHD-backed docker volume to create
-// alongside the session (see wslcgo.Options.Volumes).
-type volumeFlag []wslcgo.VolumeOptions
+// alongside the session (see wslcsession.Options.Volumes).
+type volumeFlag []wslcsession.VolumeOptions
 
 func (v *volumeFlag) String() string {
-	return fmt.Sprintf("%v", []wslcgo.VolumeOptions(*v))
+	return fmt.Sprintf("%v", []wslcsession.VolumeOptions(*v))
 }
 
 func (v *volumeFlag) Set(s string) error {
@@ -68,12 +68,12 @@ func (v *volumeFlag) Set(s string) error {
 			return fmt.Errorf("invalid -volume %q: fixed must be true/false: %w", s, err)
 		}
 	}
-	*v = append(*v, wslcgo.VolumeOptions{Name: parts[0], SizeMB: sizeMB, Fixed: fixed})
+	*v = append(*v, wslcsession.VolumeOptions{Name: parts[0], SizeMB: sizeMB, Fixed: fixed})
 	return nil
 }
 
 // sessionFlags are shared between demo mode and proxy mode: both create a
-// wslcgo.Session and both should let you configure it the same way.
+// wslcsession.Session and both should let you configure it the same way.
 type sessionFlags struct {
 	name          string
 	cpuCount      uint
@@ -104,8 +104,8 @@ func (sf *sessionFlags) validate() error {
 	return nil
 }
 
-func (sf *sessionFlags) toOptions() wslcgo.Options {
-	return wslcgo.Options{
+func (sf *sessionFlags) toOptions() wslcsession.Options {
+	return wslcsession.Options{
 		DisplayName:      sf.name,
 		CPUCount:         uint32(sf.cpuCount),
 		MemoryMB:         uint32(sf.memoryMB),

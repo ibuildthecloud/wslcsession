@@ -1,6 +1,6 @@
 //go:build windows
 
-package wslcgo
+package wslcsession
 
 import "fmt"
 

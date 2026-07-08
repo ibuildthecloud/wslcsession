@@ -1,4 +1,4 @@
-package wslcgo
+package wslcsession
 
 import "time"
 

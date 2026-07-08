@@ -1,6 +1,6 @@
 //go:build windows
 
-package wslcgo
+package wslcsession
 
 import (
 	"bufio"
@@ -16,21 +16,21 @@ import (
 )
 
 // These tests boot a real wslc VM and talk to a real dockerd inside it, so
-// they're skipped unless explicitly opted into via WSLCGO_E2E=1 - they need
+// they're skipped unless explicitly opted into via wslcsession_E2E=1 - they need
 // an actual wslc-capable Windows machine (WSL2 + Hyper-V), which an ordinary
 // CI runner won't have. cmd/wslcdemo covers the same ground interactively;
 // these are the same checks as automated, assertion-based `go test` cases.
 func skipUnlessE2E(t *testing.T) {
 	t.Helper()
-	if os.Getenv("WSLCGO_E2E") == "" {
-		t.Skip("set WSLCGO_E2E=1 to run wslc e2e tests (requires a real wslc-capable Windows machine)")
+	if os.Getenv("wslcsession_E2E") == "" {
+		t.Skip("set wslcsession_E2E=1 to run wslc e2e tests (requires a real wslc-capable Windows machine)")
 	}
 }
 
 func TestE2ESessionLifecycle(t *testing.T) {
 	skipUnlessE2E(t)
 
-	session, err := NewSession(Options{DisplayName: "wslcgo-e2e-lifecycle"})
+	session, err := NewSession(Options{DisplayName: "wslcsession-e2e-lifecycle"})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -40,8 +40,8 @@ func TestE2ESessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DisplayName: %v", err)
 	}
-	if name != "wslcgo-e2e-lifecycle" {
-		t.Errorf("DisplayName() = %q, want %q", name, "wslcgo-e2e-lifecycle")
+	if name != "wslcsession-e2e-lifecycle" {
+		t.Errorf("DisplayName() = %q, want %q", name, "wslcsession-e2e-lifecycle")
 	}
 
 	if err := session.Close(); err != nil {
@@ -55,7 +55,7 @@ func TestE2ESessionLifecycle(t *testing.T) {
 func TestE2EDockerConnVersion(t *testing.T) {
 	skipUnlessE2E(t)
 
-	session, err := NewSession(Options{DisplayName: "wslcgo-e2e-docker"})
+	session, err := NewSession(Options{DisplayName: "wslcsession-e2e-docker"})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestE2EDockerConnVersion(t *testing.T) {
 func TestE2EDialGuestTCPRefused(t *testing.T) {
 	skipUnlessE2E(t)
 
-	session, err := NewSession(Options{DisplayName: "wslcgo-e2e-refused"})
+	session, err := NewSession(Options{DisplayName: "wslcsession-e2e-refused"})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -127,10 +127,10 @@ func TestE2EPersistentVolume(t *testing.T) {
 	skipUnlessE2E(t)
 
 	dir := t.TempDir()
-	const volName = "wslcgo-e2e-vol"
+	const volName = "wslcsession-e2e-vol"
 
 	session, err := NewSession(Options{
-		DisplayName:      "wslcgo-e2e-volume",
+		DisplayName:      "wslcsession-e2e-volume",
 		StoragePath:      dir,
 		MaxStorageSizeMB: 8192,
 		Volumes:          []VolumeOptions{{Name: volName, SizeMB: 1024}},

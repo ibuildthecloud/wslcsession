@@ -1,6 +1,6 @@
 //go:build windows
 
-package wslcgo
+package wslcsession
 
 import (
 	"bytes"
@@ -31,10 +31,10 @@ var bridgeSource []byte
 //go:embed bridgesrc/entrypoint.sh
 var bridgeEntrypoint []byte
 
-const guestBridgeMountPath = "/mnt/wslcgo-bridge"
+const guestBridgeMountPath = "/mnt/wslcsession-bridge"
 
 func extractBridgeBinary() (string, error) {
-	dir := filepath.Join(os.TempDir(), "wslcgo-bridge")
+	dir := filepath.Join(os.TempDir(), "wslcsession-bridge")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

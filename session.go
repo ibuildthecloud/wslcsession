@@ -1,6 +1,6 @@
 //go:build windows
 
-package wslcgo
+package wslcsession
 
 import (
 	"fmt"
@@ -57,7 +57,7 @@ type Session struct {
 // the first time (VM boot).
 func NewSession(opts Options) (*Session, error) {
 	if len(opts.Volumes) > 0 && opts.StoragePath == "" {
-		return nil, fmt.Errorf("wslcgo: Options.Volumes requires Options.StoragePath to be set " +
+		return nil, fmt.Errorf("wslcsession: Options.Volumes requires Options.StoragePath to be set " +
 			"(VHD-backed volumes live under <StoragePath>/volumes/)")
 	}
 
@@ -91,7 +91,7 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 	}
 
 	if err := initCOM(); err != nil {
-		fail(fmt.Errorf("wslcgo: COM init: %w", err))
+		fail(fmt.Errorf("wslcsession: COM init: %w", err))
 		return
 	}
 
@@ -115,7 +115,7 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 			_ = sess.Terminate()
 			sess.Release()
 			mgr.Release()
-			fail(fmt.Errorf("wslcgo: create volume %q: %w", v.Name, err))
+			fail(fmt.Errorf("wslcsession: create volume %q: %w", v.Name, err))
 			return
 		}
 	}
@@ -216,7 +216,7 @@ func (s *Session) dial(target string) (net.Conn, error) {
 		process, callErr = s.sess.CreateRootNamespaceProcess("/bin/sh", []string{"/bin/sh", script, target}, true)
 	})
 	if callErr != nil {
-		return nil, fmt.Errorf("wslcgo: spawn bridge for %q: %w", target, callErr)
+		return nil, fmt.Errorf("wslcsession: spawn bridge for %q: %w", target, callErr)
 	}
 
 	var stdin, stdout socketHandle
@@ -259,7 +259,7 @@ func (s *Session) ensureBridgeMounted() (string, error) {
 
 		err = s.sess.MountWindowsFolder(extractedDir, guestBridgeMountPath, true)
 		if err != nil && !isHRESULT(err, hrErrorAlreadyExists) {
-			callErr = fmt.Errorf("wslcgo: MountWindowsFolder: %w", err)
+			callErr = fmt.Errorf("wslcsession: MountWindowsFolder: %w", err)
 			return
 		}
 

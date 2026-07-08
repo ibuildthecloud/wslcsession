@@ -1,4 +1,4 @@
-# wslcgo
+# wslcsession
 
 A Go library for driving [wslc](https://github.com/microsoft/WSL/tree/master/src/windows/wslcsession)
 (WSL Containers) sessions programmatically from a separate Windows process,
@@ -7,9 +7,9 @@ loopback) unless you explicitly ask for one, and with zero external
 dependencies at build or runtime.
 
 ```go
-import "github.com/ibuildthecloud/wslcgo"
+import "github.com/ibuildthecloud/wslcsession"
 
-session, err := wslcgo.NewSession(wslcgo.Options{})
+session, err := wslcsession.NewSession(wslcsession.Options{})
 if err != nil { ... }
 defer session.Close()
 
@@ -21,7 +21,7 @@ Windows only - see "Other platforms" below.
 ## Install
 
 ```
-go get github.com/ibuildthecloud/wslcgo
+go get github.com/ibuildthecloud/wslcsession
 ```
 
 ## What this gives you
@@ -49,8 +49,8 @@ for when you actually want one.
 ## Try it
 
 ```
-git clone https://github.com/ibuildthecloud/wslcgo
-cd wslcgo
+git clone https://github.com/ibuildthecloud/wslcsession
+cd wslcsession
 go run ./cmd/wslcdemo
 ```
 
@@ -90,8 +90,8 @@ containers, volumes) is wiped every time the VM restarts. Set
 that survives VM restarts:
 
 ```go
-wslcgo.Options{
-    StoragePath:      `C:\wslcgo-data`,
+wslcsession.Options{
+    StoragePath:      `C:\wslcsession-data`,
     MaxStorageSizeMB: 65536, // 64GB max, dynamically expanding
 }
 ```
@@ -105,10 +105,10 @@ if any entry fails, the whole session is torn down and `NewSession` returns
 an error rather than handing back a partially-configured session.
 
 ```go
-wslcgo.Options{
-    StoragePath:      `C:\wslcgo-data`,
+wslcsession.Options{
+    StoragePath:      `C:\wslcsession-data`,
     MaxStorageSizeMB: 65536,
-    Volumes: []wslcgo.VolumeOptions{
+    Volumes: []wslcsession.VolumeOptions{
         {Name: "mydata", SizeMB: 10240},        // dynamically expanding
         {Name: "scratch", SizeMB: 2048, Fixed: true},
     },
@@ -268,7 +268,7 @@ hit a compile failure just from depending on it.
   a real VHD-backed volume. These are skipped by default - they need an
   actual wslc-capable Windows machine - and only run with:
   ```
-  $env:WSLCGO_E2E="1"; go test -run E2E ./...
+  $env:wslcsession_E2E="1"; go test -run E2E ./...
   ```
 - `cmd/wslcdemo` remains the interactive, narrated version of the same
   checks - useful for watching what's actually happening, not just pass/fail.

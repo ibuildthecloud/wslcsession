@@ -1,6 +1,6 @@
 //go:build !windows
 
-package wslcgo
+package wslcsession
 
 import (
 	"fmt"
@@ -14,12 +14,12 @@ import (
 // don't exist anywhere else. This file exists purely so the package
 // compiles cleanly on non-Windows platforms - e.g. `go build ./...`/`go
 // vet ./...` in a cross-platform CI matrix, or a larger project that
-// imports wslcgo behind a runtime check rather than a build tag - not so
+// imports wslcsession behind a runtime check rather than a build tag - not so
 // that it does anything useful there. Every method returns
 // errUnsupported immediately.
 type Session struct{}
 
-var errUnsupported = fmt.Errorf("wslcgo: not supported on %s (wslc requires Windows + WSL2)", runtime.GOOS)
+var errUnsupported = fmt.Errorf("wslcsession: not supported on %s (wslc requires Windows + WSL2)", runtime.GOOS)
 
 // NewSession always fails on this platform. See the Session doc comment.
 func NewSession(Options) (*Session, error) {

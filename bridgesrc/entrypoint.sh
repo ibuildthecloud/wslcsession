@@ -4,7 +4,7 @@
 #
 # On the first call per VM boot, no compiled bridge exists yet at
 # $CACHE, so this builds one using the guest's own dockerd (the same
-# daemon wslcgo talks to for everything else - no host-side C toolchain
+# daemon wslcsession talks to for everything else - no host-side C toolchain
 # involved anywhere). $CACHE lives under /tmp, which is tmpfs and wiped on
 # VM restart, so every fresh session pays this cost exactly once, on its
 # first DockerConn/DialGuestUnix/DialGuestTCP call; every call after that
@@ -12,7 +12,7 @@
 set -e
 
 DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-CACHE_DIR=/tmp/wslcgo-cache
+CACHE_DIR=/tmp/wslcsession-cache
 CACHE="$CACHE_DIR/bridge"
 
 if [ ! -x "$CACHE" ]; then

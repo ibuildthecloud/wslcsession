@@ -1,6 +1,6 @@
 //go:build windows
 
-package wslcgo
+package wslcsession
 
 import (
 	"encoding/binary"
@@ -32,30 +32,30 @@ func parseGUID(s string) (GUID, error) {
 	s = strings.Trim(s, "{}")
 	parts := strings.Split(s, "-")
 	if len(parts) != 5 {
-		return g, fmt.Errorf("wslcgo: invalid GUID %q", s)
+		return g, fmt.Errorf("wslcsession: invalid GUID %q", s)
 	}
 
 	decode := func(h string) ([]byte, error) { return hex.DecodeString(h) }
 
 	d1, err := decode(parts[0])
 	if err != nil || len(d1) != 4 {
-		return g, fmt.Errorf("wslcgo: invalid GUID %q", s)
+		return g, fmt.Errorf("wslcsession: invalid GUID %q", s)
 	}
 	d2, err := decode(parts[1])
 	if err != nil || len(d2) != 2 {
-		return g, fmt.Errorf("wslcgo: invalid GUID %q", s)
+		return g, fmt.Errorf("wslcsession: invalid GUID %q", s)
 	}
 	d3, err := decode(parts[2])
 	if err != nil || len(d3) != 2 {
-		return g, fmt.Errorf("wslcgo: invalid GUID %q", s)
+		return g, fmt.Errorf("wslcsession: invalid GUID %q", s)
 	}
 	d4a, err := decode(parts[3])
 	if err != nil || len(d4a) != 2 {
-		return g, fmt.Errorf("wslcgo: invalid GUID %q", s)
+		return g, fmt.Errorf("wslcsession: invalid GUID %q", s)
 	}
 	d4b, err := decode(parts[4])
 	if err != nil || len(d4b) != 6 {
-		return g, fmt.Errorf("wslcgo: invalid GUID %q", s)
+		return g, fmt.Errorf("wslcsession: invalid GUID %q", s)
 	}
 
 	g.Data1 = binary.BigEndian.Uint32(d1)
@@ -149,7 +149,7 @@ func initCOM() error {
 
 	var wsaData [512]byte
 	if ret, _, _ := procWSAStartup.Call(0x0202, uintptr(unsafe.Pointer(&wsaData[0]))); ret != 0 {
-		return fmt.Errorf("wslcgo: WSAStartup failed: %d", ret)
+		return fmt.Errorf("wslcsession: WSAStartup failed: %d", ret)
 	}
 
 	return nil
@@ -205,7 +205,7 @@ func recv(handle socketHandle, buf []byte) (int, error) {
 	r, _, err := procRecv.Call(uintptr(handle), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
 	n := int(int32(r))
 	if n < 0 {
-		return 0, fmt.Errorf("wslcgo: recv failed: %w", err)
+		return 0, fmt.Errorf("wslcsession: recv failed: %w", err)
 	}
 	return n, nil
 }
@@ -217,7 +217,7 @@ func send(handle socketHandle, buf []byte) (int, error) {
 	r, _, err := procSend.Call(uintptr(handle), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
 	n := int(int32(r))
 	if n < 0 {
-		return 0, fmt.Errorf("wslcgo: send failed: %w", err)
+		return 0, fmt.Errorf("wslcsession: send failed: %w", err)
 	}
 	return n, nil
 }

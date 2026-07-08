@@ -1,3 +1,3 @@
-module github.com/ibuildthecloud/wslcgo
+module github.com/ibuildthecloud/wslcsession
 
 go 1.22

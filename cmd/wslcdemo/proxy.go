@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/ibuildthecloud/wslcgo"
+	"github.com/ibuildthecloud/wslcsession"
 )
 
-// runProxy runs a plain local TCP -> dockerd proxy backed by a wslcgo
+// runProxy runs a plain local TCP -> dockerd proxy backed by a wslcsession
 // session: every accepted connection gets its own DockerConn, relayed
 // bidirectionally. This lets a real `docker` CLI (or anything else that
 // speaks the Docker Engine API) point at 127.0.0.1:<port> and reach a wslc
@@ -21,7 +21,7 @@ import (
 // actually want a TCP-facing endpoint (e.g. to hand to `docker` itself).
 func runProxy(args []string) error {
 	fs := flag.NewFlagSet("proxy", flag.ExitOnError)
-	sf := addSessionFlags(fs, "wslcgo-proxy")
+	sf := addSessionFlags(fs, "wslcsession-proxy")
 	listen := fs.String("listen", "127.0.0.1:2375", "local address to listen on")
 	_ = fs.Parse(args) // ExitOnError: Parse itself never returns on failure
 	if err := sf.validate(); err != nil {
@@ -34,7 +34,7 @@ func runProxy(args []string) error {
 	}
 
 	fmt.Println("Creating session (first run boots a VM, can take a while)...")
-	session, err := wslcgo.NewSession(sf.toOptions())
+	session, err := wslcsession.NewSession(sf.toOptions())
 	if err != nil {
 		return fmt.Errorf("NewSession: %w", err)
 	}
@@ -67,7 +67,7 @@ func runProxy(args []string) error {
 	}
 }
 
-// closeWriter matches *net.TCPConn's convention (and wslcgo's guestConn,
+// closeWriter matches *net.TCPConn's convention (and wslcsession's guestConn,
 // which implements the same method) for a half-close: "I'm done sending,
 // but still want to read." Type-asserting for it here - rather than doing a
 // full Close() on whichever side finishes first - is what lets one
@@ -76,7 +76,7 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
-func handleProxyConn(session *wslcgo.Session, client net.Conn) {
+func handleProxyConn(session *wslcsession.Session, client net.Conn) {
 	defer func() { _ = client.Close() }()
 	fmt.Printf("[+] %s\n", client.RemoteAddr())
 

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ibuildthecloud/wslcgo"
+	"github.com/ibuildthecloud/wslcsession"
 )
 
-// runDemo exercises the wslcgo library end to end:
+// runDemo exercises the wslcsession library end to end:
 //  1. creates a session (dedicated VM, dies with this process)
 //  2. talks to dockerd over DockerConn (a vsock-relayed docker.sock connection)
 //  3. uses that to spin up a tiny container listening on the guest's own
@@ -27,7 +27,7 @@ import (
 // backed by wslcsession.exe's private vsock control channel.
 func runDemo(args []string) error {
 	fs := flag.NewFlagSet("wslcdemo", flag.ExitOnError)
-	sf := addSessionFlags(fs, "wslcgo-demo")
+	sf := addSessionFlags(fs, "wslcsession-demo")
 	_ = fs.Parse(args) // ExitOnError: Parse itself never returns on failure
 	if err := sf.validate(); err != nil {
 		return err
@@ -35,7 +35,7 @@ func runDemo(args []string) error {
 
 	fmt.Println("Creating session (first run boots a VM, can take a while)...")
 	start := time.Now()
-	session, err := wslcgo.NewSession(sf.toOptions())
+	session, err := wslcsession.NewSession(sf.toOptions())
 	if err != nil {
 		return fmt.Errorf("NewSession: %w", err)
 	}
@@ -74,7 +74,7 @@ func runDemo(args []string) error {
 	return nil
 }
 
-func checkDockerVersion(session *wslcgo.Session) error {
+func checkDockerVersion(session *wslcsession.Session) error {
 	conn, err := session.DockerConn()
 	if err != nil {
 		return fmt.Errorf("DockerConn: %w", err)
@@ -103,7 +103,7 @@ func checkDockerVersion(session *wslcgo.Session) error {
 // guest, not an error from failing to even reach it) - proof the whole path
 // (COM -> CreateRootNamespaceProcess -> bridge exec -> real connect() syscall
 // inside the guest) is intact, independent of Docker Hub availability.
-func checkGuestTCPDialRefused(session *wslcgo.Session) error {
+func checkGuestTCPDialRefused(session *wslcsession.Session) error {
 	fmt.Println("Dialing an unused guest port (127.0.0.1:1) to confirm the round trip reaches the guest kernel...")
 	conn, err := session.DialGuestTCP("127.0.0.1:1")
 	if err != nil {
@@ -124,7 +124,7 @@ func checkGuestTCPDialRefused(session *wslcgo.Session) error {
 // echo round-trips - the exact same underlying mechanism as DockerConn
 // (spawn the bridge helper, relay its stdio), just pointed at a TCP address
 // instead of a unix socket.
-func checkGuestTCPDial(session *wslcgo.Session) error {
+func checkGuestTCPDial(session *wslcsession.Session) error {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -169,7 +169,7 @@ func checkGuestTCPDial(session *wslcgo.Session) error {
 		"Cmd": ["nc", "-lk", "-p", "8765", "-e", "/bin/cat"],
 		"HostConfig": {"NetworkMode": "host", "AutoRemove": true}
 	}`, testImage)
-	resp, err = client.Post("http://localhost/containers/create?name=wslcgo-tcp-test", "application/json", strings.NewReader(createBody))
+	resp, err = client.Post("http://localhost/containers/create?name=wslcsession-tcp-test", "application/json", strings.NewReader(createBody))
 	if err != nil {
 		return fmt.Errorf("create container: %w", err)
 	}
@@ -180,7 +180,7 @@ func checkGuestTCPDial(session *wslcgo.Session) error {
 	}
 
 	fmt.Println("Starting container...")
-	resp, err = client.Post("http://localhost/containers/wslcgo-tcp-test/start", "", nil)
+	resp, err = client.Post("http://localhost/containers/wslcsession-tcp-test/start", "", nil)
 	if err != nil {
 		return fmt.Errorf("start container: %w", err)
 	}
@@ -190,7 +190,7 @@ func checkGuestTCPDial(session *wslcgo.Session) error {
 		return fmt.Errorf("start container: HTTP %d", resp.StatusCode)
 	}
 	defer func() {
-		resp, err := client.Post("http://localhost/containers/wslcgo-tcp-test/stop?t=1", "", nil)
+		resp, err := client.Post("http://localhost/containers/wslcsession-tcp-test/stop?t=1", "", nil)
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
@@ -206,7 +206,7 @@ func checkGuestTCPDial(session *wslcgo.Session) error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	const message = "hello-from-wslcgo\n"
+	const message = "hello-from-wslcsession\n"
 	if _, err := conn.Write([]byte(message)); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
